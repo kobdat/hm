@@ -1,0 +1,47 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import ipywidgets as widgets
+from io import StringIO
+box = widgets.Layout(width='96px')
+bg_d = widgets.FloatText(value=1.3, layout=box)
+bg_a = widgets.FloatText(value=0.9, layout=box)
+thr_d = widgets.FloatText(value=10, layout=box)
+thr_a = widgets.FloatText(value=5, layout=box)
+alpha = widgets.FloatText(value=0.21, layout=box)
+upload = widgets.FileUpload(accept='.txt', multiple=False)
+table = widgets.GridBox(children=[widgets.Label(''), 
+        widgets.Label('Background'), 
+        widgets.Label('Threshold'), 
+        widgets.Label('Crosstalk'),
+        widgets.Label('Donor'), bg_d, thr_d, alpha,
+        widgets.Label('Acceptor'), bg_a, thr_a],
+    layout=widgets.Layout(grid_template_columns='120px 100px 100px 100px',
+        align_items='center'))
+out = widgets.Output()
+def update_plot(change=None):
+    out.clear_output()
+    if not upload.value:
+        return
+    file = upload.value[0]
+    text = bytes(file['content']).decode()
+    df = pd.read_csv(StringIO(text), sep='\t', skiprows=2, header=None)
+    df.columns = ['t_a', 'Ia', 't_d', 'Id']
+    df = df.apply(pd.to_numeric, errors='coerce').dropna()
+    df = df[df['t_a'] == df['t_d']]
+    Fa = df['Ia'] - bg_a.value
+    Fd = df['Id'] - bg_d.value - alpha.value * Fa
+    mask = ((Fa > thr_a.value) & (Fd > thr_d.value))
+    mask &= ((Fd > thr_d.value) | (Fa > thr_a.value))
+    fret = Fa[mask] / (Fa[mask] + Fd[mask])
+    with out:
+        plt.figure(figsize = (10,5))
+        plt.hist(fret, bins=50)
+        plt.xlabel('FRET efficiency')
+        plt.ylabel('Counts')
+        plt.xlim(0, 1)
+        plt.show()
+upload.observe(update_plot, names='value')
+for w in [bg_d, bg_a, thr_d, thr_a, alpha]:
+    w.observe(update_plot, names='value')
+widgets.VBox([upload, table, out])
